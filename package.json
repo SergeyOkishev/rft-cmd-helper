@@ -1,0 +1,22 @@
+{
+  "name": "test-1-rft",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx ts-node index.ts"
+  },
+  "dependencies": {
+    "@unique-nft/accounts": "^0.2.2",
+    "@unique-nft/sdk": "^0.2.0",
+    "axios": "^0.27.2",
+    "canvas": "^2.9.3",
+    "ipfs-http-client": "^53.0.1",
+    "prompt": "^1.3.0"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/prompt": "^1.1.4"
+  }
+}
