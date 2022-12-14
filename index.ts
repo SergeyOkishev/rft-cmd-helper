@@ -39,33 +39,55 @@ const transferToken = async (sdk: SDK.Client, collectionId: number, tokenId: num
   return;
 }
 
+const refractureToken = async (sdk: SDK.Client, collectionId: number, tokenId: number, address: string, amount: number) => {
+  await sdk.refungible.repartitionToken.submitWaitResult({ tokenId, collectionId, address, amount });
+  return;
+}
+
 const terminal = async (sdk: SDK.Client, address: string, collectionId: number) => {
   console.log('Starting terminal');
   while(true) {
     console.log('\u0007'); // beep
     const accountTokensResult = await sdk.tokens.accountTokens({ collectionId, address });
-    const availableTokenIds = accountTokensResult.tokens.map(t => t.tokenId);
-    console.log(`${availableTokenIds.length} Available tokens: ${availableTokenIds.join(', ')}`);
+    const tokensWithPieces = await Promise.all(accountTokensResult.tokens.map(async (t) => ({ 
+        ...t, 
+        totalPieces: (await sdk.refungible.totalPieces(t)).amount,
+        ownedPieces: await (await sdk.refungible.getBalance({ address, collectionId, tokenId: t.tokenId })).amount
+      }),
+    ));
+    // Array of string representation {tokenId}({amountOfFractionsForThatToken})
+    // {tokenId}({owned/total})
+    // example: 1234(50/100)
+    const availableTokenIdAndFractionsStrings = tokensWithPieces.map(twp => `${twp.tokenId}(${twp.ownedPieces}/${twp.totalPieces})`);
+    console.log(`${availableTokenIdAndFractionsStrings.length} Available tokens: ${availableTokenIdAndFractionsStrings.join(',\n ')}`);
     console.log(`
       1. Create new RFT
       2. Transfer RFT (first available to seed account). Amount and "to" taken from config.
-      3. Burn NFT (not implemented)
-      4. Refracture RFT (not implemented)
-      5. RFT -> NFT (not implemented)
+      3. Repartition token
+      4. Burn RFT
     `);
 
     const choice = await rl('What to do?');
-    switch (Number(choice)) {
+      switch (Number(choice)) {
       case 1:
         await createToken(sdk, address, collectionId);
         break;
       case 2:
-        const amount = config.amountToTransfer || Number(rl('How many?'));
-        await transferToken(sdk, collectionId, availableTokenIds[0], address, config.transferTo, config.amountOfFractions);
+        const tokenId = accountTokensResult.tokens[0].tokenId;
+        const amountToTransfer = config.amountToTransfer || Number(rl('How many?'));
+        await transferToken(sdk, collectionId, tokenId, address, config.transferTo, amountToTransfer);
         break;
       case 3:
+        // we can only change amount of fractions for tokens that we own fully, so - take first one that is owned by seed
+        const tokenToRefunge = tokensWithPieces.filter(twp => twp.totalPieces === twp.ownedPieces)[0];
+        const newAmount = tokenToRefunge.totalPieces * 10; // || Number(rl('To what?')) // consider testing shrinking as well
+        console.log(`Repartitioning token: ${tokenToRefunge.tokenId} from ${tokenToRefunge.totalPieces} to ${newAmount}`);
+        await refractureToken(sdk, collectionId, tokenToRefunge.tokenId, address, newAmount);
       case 4:
-      case 5:
+        // can't burn nft if doesn't own all pieces
+        const tokenToBurn = tokensWithPieces.filter(twp => twp.totalPieces === twp.ownedPieces)[0];
+        console.log(`Burning token ${tokenToBurn.tokenId}`);
+        await sdk.tokens.burn.submitWaitResult({ collectionId, address, tokenId: tokenToBurn.tokenId, value: tokenToBurn.totalPieces });
       default: 
         console.log('Command not found');
         break;
@@ -96,7 +118,4 @@ const terminal = async (sdk: SDK.Client, address: string, collectionId: number) 
   }
 
   await terminal(sdk, address, collectionId);
-
-  // TODO: token burned
-  // TODO: token build upp into nft (???)
 })();
